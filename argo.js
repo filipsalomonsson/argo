@@ -4,9 +4,7 @@
  * Argo.js is freely distributable under the MIT license.
  */
 (function() {
-    var Argo = (typeof this.exports === "object") ?
-        this.exports : (this.Argo = {});
-
+    var Argo = (typeof exports !== "undefined") ? exports : (this.Argo = {});
         Argo.VERSION = "0.0-pre";
 
     // Extend an object with the properties of another.
