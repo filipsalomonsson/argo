@@ -71,12 +71,12 @@
         for (;;) {
             ands.push(new ValueNode(parser));
             parser.read();
-            while (parser.peek("and")) {
+            while (parser.peek(/^and\s+/)) {
                 parser.read("and"); parser.read();
                 ands.push(new ValueNode(parser));
                 parser.read();
             }
-            if (parser.peek("or")) {
+            if (parser.peek(/^or\s+/)) {
                 parser.read("or"); parser.read();
                 ors.push(ands);
                 ands = [];
