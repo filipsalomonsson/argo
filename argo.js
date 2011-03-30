@@ -268,5 +268,10 @@
         }
         return output.join("");
     };
+
+    Argo.renderTmpl = function(tmpl, data) {
+        var tree = new Argo.TemplateParser(tmpl).parse();
+            return Argo.render(tree, data);
+    }
     
 }());
