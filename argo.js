@@ -1,5 +1,5 @@
 /*!
- * Argo.js v0.0-git
+ * Argo.js v0.0-pre
  * Copyright 2011 Filip Salomonsson
  * Argo.js is freely distributable under the MIT license.
  */
