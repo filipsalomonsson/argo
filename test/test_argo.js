@@ -29,3 +29,9 @@ exports["Complex expressions"] = testCase({
         test.done();
     }
 });
+
+exports["Stray mustaches"] = function(test) {
+    var s = "}}}foo{bar}}baz{";
+    test.equals(tmpl(s, {}), s);
+    test.done();
+};

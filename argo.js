@@ -37,7 +37,7 @@
     function NameNode(parser) { this.name = parser.read_word(); }
     NameNode.prototype.render = function(context) { return this.name; };
 
-    function TextNode(parser) { this.text = parser.read(/^[^{]+/); }
+    function TextNode(parser) { this.text = parser.read(/^([^{]|\{(?!\{))+/); }
     TextNode.prototype.render = function(context) { return this.text; };
 
     function ValueNode(parser) {
