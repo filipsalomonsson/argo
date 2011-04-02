@@ -34,12 +34,17 @@
         return value;
     }
 
+    // NameNodes represent a single identifier. They are used for variables,
+    // filter names, etc.
     function NameNode(parser) { this.name = parser.read_word(); }
     NameNode.prototype.render = function(context) { return this.name; };
 
+    // TextNodes are for all content outside of template tags.
     function TextNode(parser) { this.text = parser.read(/^([^{]|\{(?!\{))+/); }
     TextNode.prototype.render = function(context) { return this.text; };
 
+    // A ValueNode is a variable/member lookup, like foo.bar.baz, with
+    // optional filters, foo.bar|uppercase.
     function ValueNode(parser) {
         var path = [], filters = [];
         path.push(parser.read_word());
@@ -59,15 +64,17 @@
             return lookup(context, this.path);
     };
     
+    // ConditionNodes are the meat of conditional blocks. They consist of
+    // any number of Values separated by boolean "and"/"or" operators.
+    // No parentheses are allowed. If you need to make more complex
+    // conditions, use nested "if" blocks instead.
+    //
+    // Operator precedence is as you would expect, so for example
+    // "a and b or c and d and e or f" will be interpreted as
+    // (a and b) or (c and d and e) or f.
     function ConditionNode(parser) {
         var ors = this.ors = [], ands = [];
         parser.read();
-        // Read into an array of arrays.
-        // The members of each second-level array are and-ed, and the
-        // resulting values are in turn or-ed
-        // We don't handle parenthesized expressions; use nested ifs for that.
-        
-        // (a and b) or (c and d and e) or (f)
         for (;;) {
             ands.push(new ValueNode(parser));
             parser.read();
