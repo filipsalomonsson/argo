@@ -36,16 +36,26 @@
 
     // NameNodes represent a single identifier. They are used for variables,
     // filter names, etc.
-    function NameNode(parser) { this.name = parser.read_word(); }
+    function NameNode(name) { this.name = name; }
+    NameNode.parse = function(parser) {
+        return new NameNode(parser.read_word());
+    };
     NameNode.prototype.render = function(context) { return this.name; };
 
     // TextNodes are for all content outside of template tags.
-    function TextNode(parser) { this.text = parser.read(/^([^{]|\{(?!\{))+/); }
+    function TextNode(text) { this.text = text; }
+    TextNode.parse = function(parser) {
+        return new TextNode(parser.read_text());
+    };
     TextNode.prototype.render = function(context) { return this.text; };
 
     // A ValueNode is a variable/member lookup, like foo.bar.baz, with
     // optional filters, foo.bar|uppercase.
-    function ValueNode(parser) {
+    function ValueNode(path, filters) {
+        this.path = path;
+        this.filters = filters;
+    }
+    ValueNode.parse = function(parser) {
         var path = [], filters = [];
         path.push(parser.read_word());
         while (parser.peek(".")) {
@@ -53,13 +63,11 @@
             path.push(parser.read_word());
         }
         while (parser.peek("|")) {
-            this.read("|");
+            parser.read("|");
             filters.push(parser.read_word());
         }
-
-        this.path = path;
-        this.filters = filters;
-    }
+        return new ValueNode(path, filters);
+    };
     ValueNode.prototype.render = function(context) {
             return lookup(context, this.path);
     };
@@ -72,15 +80,18 @@
     // Operator precedence is as you would expect, so for example
     // "a and b or c and d and e or f" will be interpreted as
     // (a and b) or (c and d and e) or f.
-    function ConditionNode(parser) {
+    function ConditionNode(ors) {
+        this.ors = ors;
+    }
+    ConditionNode.parse = function(parser) {
         var ors = this.ors = [], ands = [];
         parser.read();
         for (;;) {
-            ands.push(new ValueNode(parser));
+            ands.push(ValueNode.parse(parser));
             parser.read();
             while (parser.peek(/^and\s+/)) {
                 parser.read("and"); parser.read();
-                ands.push(new ValueNode(parser));
+                ands.push(ValueNode.parse(parser));
                 parser.read();
             }
             if (parser.peek(/^or\s+/)) {
@@ -90,7 +101,9 @@
             } else { break; }
         }
         if (ands.length > 0) { ors.push(ands); }
+        return new ConditionNode(ors);
     }
+
     ConditionNode.prototype.render = function(context) {
         var i, j, group, result = false, orlen = this.ors.length, andlen;
         for (i = 0; i < orlen; i++) {
@@ -105,26 +118,36 @@
         return !!result;
     };
     
-    function TagNode(parser) {
+    // TagNodes represent all tags of the form {% ... %}. Tags are defined
+    // in the Argo.tags object, which may be extended.
+    function TagNode(tag, args, tree) {
+        this.tag = tag;
+        this.args = args;
+        this.tree = tree;
+    }
+    TagNode.parse = function(parser) {
         var name = parser.read_word(),
-        args = this.args = [],
-        tag = this.tag = Argo.tags[name],
-        tagargs = tag.args, tagargslen=tagargs.length, i, ArgNode;
+        args = [],
+        tag = Argo.tags[name],
+        tagargs = tag.args, tagargslen=tagargs.length, i, ArgNode, tree;
         if (!tag) { parser.error("Unknown tag: '" + name + "'"); }
+        // Read arguments according to tag definition
         for (i=0; i < tagargslen; i++) {
             ArgNode = tagargs[i];
             parser.read();
             if (typeof ArgNode === "string") {
                 parser.read(ArgNode); parser.read();
-            } else { args.push(new ArgNode(parser)); }
+            } else { args.push(ArgNode.parse(parser)); }
         }
-        this.name = name;
+        // Begin a new subtree if parser is a block tag
         if (tag.block) {
-            this.tree = [];
-            this.tree.parent = parser.tree;
-            this.tree.name = name
+            tree = [];
+            tree.parent = parser.tree;
+            tree.name = name;
         }
-    }
+        return new TagNode(tag, args, tree);
+        //if (node.tag.verify) { node.tag.verify(parser.tree); }
+    };
     TagNode.prototype.render = function(context, render) {
             var f = this.tag.render;
             context = {data: clone(context.data), parent: context};
@@ -152,7 +175,7 @@
             render: function(context, render, tree, condition) {
                 var i, truetree, falsetree;
                 for (i = 0; i < tree.length; i++) {
-                    if (tree[i].name === "else") { break; }
+                    if (tree[i].tag && tree[i].tag.name === "else") { break; }
                 }
                 truetree = tree.slice(0, i);
                 falsetree = tree.slice(i);
@@ -164,6 +187,7 @@
             }
         },
         "else": {
+            name: "else",
             args: [],
             block: false,
             verify: function(tree) {
@@ -187,12 +211,42 @@
     extend(Argo.TemplateParser.prototype, {
         parse: function() {
             while (this.pos < this.s.length) {
-                if (this.peek("{{")) { this.read_print(); }
-                else if (this.peek("{%")) { this.read_tag(); }
-                else { this.read_text(); }
+                if (this.peek("{{")) { this.parse_print(); }
+                else if (this.peek("{%")) { this.parse_tag(); }
+                else { this.parse_text(); }
             }
             return this.tree;
         },
+
+        parse_print: function() {
+            this.read("{{"); this.read();
+            node = ValueNode.parse(this);
+            this.read(); this.read("}}");
+            this.tree.push(node);
+        },
+
+        parse_tag: function() {
+            this.read("{%"); this.read();
+            if (this.peek("/")) {
+                // It's an end tag!
+                // Check for consistency and finish the block
+                this.read("/");
+                name = this.read_word();
+                if (name !== this.tree.name) {
+                    this.error("Expected /" + this.tree.name +
+                               ", got /" + name);
+                }
+                // Restore the parent tree
+                this.tree = this.tree.parent;
+            } else {
+                node = TagNode.parse(this);
+                this.tree.push(node);
+                if (node.tree) this.tree = node.tree;
+            }
+            this.read(); this.read("%}");
+        },
+
+        parse_text: function() { this.tree.push(TextNode.parse(this)); },
         
         // Peek ahead and either return a string or match it against
         // an expected string or regexp.
@@ -222,7 +276,7 @@
             this.pos += what.length;
             return what;
         },
-        read_text: function() { this.tree.push(new TextNode(this)); },
+        read_text: function() { return this.read(/^([^{]|\{(?!\{|%))+/); },
         read_word: function() { return this.read(/^[a-z]\w*/); },
         read_literal: function() {
             if (this.peek(/^\d/)) { return this.read(/^\d+(\.\d+)?/); }
@@ -231,32 +285,6 @@
             }
         },
 
-        read_print: function() {
-            this.read("{{"); this.read();
-            this.tree.push(new ValueNode(this));
-            this.read(); this.read("}}");
-        },
-
-        read_tag: function() {
-            var name, node;
-            this.read("{%"); this.read();
-            if (this.peek("/")) {
-                this.read("/");
-                name = this.read_word();
-                if (name !== this.tree.name) {
-                    this.error("Expected /" + this.tree.name +
-                               ", got /" + name);
-                }
-                this.tree = this.tree.parent;
-            } else {
-                var node = new TagNode(this);
-                this.tree.push(node);
-                if (node.tree) { this.tree = node.tree; }
-                if (node.tag.verify) { node.tag.verify(this.tree); }
-            }
-            this.read(); this.read("%}");
-        },
-        
         error: function(msg) {
             var lineno = this.s.slice(0, this.pos).split("\n").length;
             if (this.s.charAt(0) === "\n") { lineno -= 1; }
