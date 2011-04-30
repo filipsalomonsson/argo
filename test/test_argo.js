@@ -36,7 +36,9 @@ exports["Stray mustaches"] = function(test) {
     test.done();
 };
 
-exports["Basic if block"] = function(test) {
+exports["If tags"] = function(test) {
     test.equals(tmpl("{% if a %}a{% /if %}", {a: true}), "a");
+    test.equals(tmpl("{% if a %}a{% else %}b{% /if %}", {a: true}), "a");
+    test.equals(tmpl("{% if a %}a{% else %}b{% /if %}", {a: false}), "b");
     test.done();
-}
+};
