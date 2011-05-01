@@ -47,3 +47,10 @@ exports["If tags"] = testCase({
         test.done();
     }
 });
+
+exports["For tags"] = testCase({
+    simple: function(test) {
+        test.equals(tmpl("{% for x in a %}{{x}}{% /for %}", {a: [1,2,3]}), "123");
+        test.done();
+    }
+});
